@@ -1,185 +1,68 @@
-### Big Data Assignment – Spark Data Analysis with PySpark
----
+# Big Data Assignment — PySpark Analysis
 
-### Overview
+Seven PySpark exercises over four public datasets: bakery transactions, Durham County restaurant inspections, Durham foreclosures, and world population 1980–2010.
 
-In this assignment, I used **Apache Spark (PySpark)** to perform scalable data analysis on multiple real-world datasets.  
-You will practice:
+`PySpark` `Spark SQL` `Window functions` `Jupyter` `Python 3`
 
-- **Data loading and cleaning** from CSV and JSON sources  
-- **Spark DataFrame transformations** (select, filter, withColumn, groupBy, pivot, joins)  
-- **Spark SQL functions** for dates, times, aggregations, and user-defined logic  
-- **Exploratory analysis** of sales, restaurant risks, foreclosures, and population growth  
-
-All work was  completed in a **Jupyter notebook** using **PySpark**.
+Coursework — big data course, Assignment 2, run October 2025.
 
 ---
 
-### Datasets
+## What it does
 
-You are provided with the following datasets (paths may vary based on your environment):
+One notebook builds a `SparkSession`, loads two CSVs and two JSON files, and answers seven questions with DataFrame transformations, UDFs, window functions, and pivots. Every problem prints its result table inline; the notebook is committed with outputs, so the answers are readable without a Spark cluster.
 
-- **Bakery Transactions**: `bakery.csv`  
-  - Transaction-level sales data, including date, time, transaction ID, and item.  
-- **Restaurant Inspection Data (Durham County, NC)**: `Restaurants_in_Durham_County_NC.json`  
-  - Includes establishment type, status, seating capacity, inspection risk, and geolocation.  
-- **Durham County Foreclosures**: `durham-nc-foreclosure-2006-2016.json`  
-  - Contains parcel numbers, geocodes, and foreclosure years.  
-- **Global Population by Country (1980–2010)**: `populationbycountry19802010millions.csv`  
-  - Country-level population counts by year.
+| Dataset | Format | Rows |
+|---|---|---|
+| `bakery.csv` | CSV | 21,293 |
+| `Restaurants_in_Durham_County_NC.json` | nested JSON | 2,463 |
+| `durham-nc-foreclosure-2006-2016.json` | nested JSON | 1,948 |
+| `populationbycountry19802010millions.csv` | wide CSV, one column per year | 232 |
 
----
+## The seven problems
 
-### Learning Objectives
+| # | Question | Technique |
+|---|---|---|
+| 1 | Top 10 weekday dates by estimated revenue | UDF price lookup, `date_format`, distinct-transaction count |
+| 2 | Highest-capacity moderate-risk restaurant zones | latitude bucketing into North/Central/South, groupBy |
+| 3 | Top-selling item per hour, plus an item × hour pivot | `Window.partitionBy(hour)`, `pivot` |
+| 4 | Foreclosures by parcel area code and crisis period | year bucketing, pivot, `total >= 50` filter |
+| 5 | Most frequent weekday item pairs by daypart | `collect_list`, `itertools.combinations`, ranked window |
+| 6 | ZIP codes containing both low- and high-risk restaurants | risk-category UDF, pivot, self-intersection |
+| 7 (extra credit) | Population interpolation and regional growth | `stack` unpivot, window interpolation, re-pivot by decade |
 
-By completing this assignment, I was able to:
+## Selected results
 
-- Build and configure a **SparkSession** in PySpark.  
-- Read **CSV** and **JSON** data into Spark DataFrames.  
-- Apply **UDFs**, date/time functions, and window functions.  
-- Construct **aggregated summaries**, **pivots**, and **ranked outputs**.  
-- Derive business and policy insights from large datasets.
+- Best weekday: 2016-10-31, 96 transactions, $684.00 estimated revenue.
+- Central zone full-service restaurants dominate capacity — 92 establishments, 13,179 seats, against 84 and 10,491 in the South.
+- Coffee is the top-selling item in every business hour from 07:00 to 21:00, peaking at 946 sales in the 11:00 hour.
+- Foreclosure area code 112 has 147 total, but 97 of them fall in 2006–2009. Area 159 has 142 total with 72 in 2014–2016 — two neighbourhoods with opposite trajectories through the crisis.
+- Breakfast's most common pair is Coffee + Pastry, 158 co-purchases.
+- ZIP 27707 has the most inspected restaurants at 202, split 85 high-risk / 35 medium / 82 low.
 
----
+## The interesting part: pivots as the answer shape
 
-### Tasks
+Four of the seven problems end in a pivot, and that is the design decision worth defending. Problem 4 could have returned one row per area-code-and-year-bucket, but bucketing into `2006-2009`, `2010-2013`, `2014-2016` as *columns* is what makes the crisis visible — area 112 and area 159 have nearly identical totals and read as identical until the years become columns. Problem 3 does the same for time of day, and Problem 6 for risk category, where the interesting set is ZIP codes that contain *both* extremes, which is a condition you can only filter on once the categories sit side by side.
 
-#### Problem 1 – Weekday Revenue Estimation (Bakery)
+Problem 5 is the one that resists Spark's DataFrame API: pairwise co-purchase counts need `itertools.combinations` over a `collect_list` per transaction, then an exploded regroup, because there is no built-in for self-cross-joining an array against itself.
 
-Using the **bakery transactions** dataset:
+## Running it
 
-- Parse the `Date` field and identify **weekdays** (Monday–Friday).  
-- Define **price categories** (e.g., premium, standard, budget) and assign prices to items via a **UDF**.  
-- For weekdays only, compute for each date:
-  - Total number of **distinct transactions**  
-  - **Estimated daily revenue** (sum of assigned item prices)  
-- Produce a table of the **top 10 weekday dates by estimated revenue**, including:
-  - `Date`, `Weekday`, `Total_Transactions`, `Estimated_Revenue`
+```bash
+jupyter notebook "Big Data Assignment.ipynb"
+```
 
----
+Requires PySpark. The datasets are not in the repo; the notebook reads them from `/home/jovyan/shared/data/`, the shared path of the course's Jupyter/Spark image. Change `SHARED` in cell 2 to point at your own copies.
 
-#### Problem 2 – High-Capacity, Moderate-Risk Restaurant Zones
+## Repository map
 
-Using the **Durham restaurant inspection** dataset:
+| Path | Purpose |
+|---|---|
+| `Big Data Assignment.ipynb` | All seven problems, with stored outputs |
 
-- Filter to **ACTIVE** establishments in the **Food Service** area.  
-- Keep restaurants with **seating capacity ≥ 20** and **moderate risk levels** (e.g., risk 3 or 4 as defined in the data).  
-- Use **geolocation (latitude)** to assign each restaurant to a **zone**:
-  - **North**, **Central**, or **South** based on latitude ranges.  
-- Group by `zone` and `establishment_type` to compute:
-  - Number of restaurants  
-  - Total seating capacity  
-- Output the **top 15 zone–establishment combinations**, ordered by restaurant count and total seats.
+## Limitations
 
----
-
-#### Problem 3 – Top-Selling Item per Hour (Bakery)
-
-Using the **bakery** dataset:
-
-- Convert the `Time` column to a proper timestamp and extract the **hour of day**.  
-- Restrict to business hours **(e.g., 6–21)** and exclude invalid rows.  
-- Define a **time-of-day category** (Morning, Afternoon, Evening) based on hour.  
-- For each hour:
-  - Count how many times each item appears.  
-  - Use a **window function** to find the **top-selling item per hour** (hours 7–21).  
-- Create a **pivot table** where:
-  - Rows = `Item`  
-  - Columns = hours 7–21  
-  - Cells = count of occurrences  
-  - Add a `Total` column and sort by total count.
-
----
-
-#### Problem 4 – Foreclosure Trends by Area and Crisis Period
-
-Using the **foreclosure** dataset:
-
-- Extract the **year** from the foreclosure date field.  
-- Bucket years into ranges:
-  - `2006–2009`, `2010–2013`, `2014–2016`  
-- Derive an **area code** from the parcel number (e.g., first 3 characters).  
-- For each area code, compute:
-  - Foreclosure counts per year bucket  
-  - Total number of foreclosures  
-- Build a **pivoted summary** with columns for each year bucket and filter to area codes with **≥ 50 total foreclosures**.  
-- Display the **top 10 area codes** ordered by total foreclosures.
-
----
-
-#### Problem 5 – Weekday Co-Purchase Patterns (Bakery)
-
-Using the **bakery** dataset:
-
-- Focus on **weekday transactions** (Monday–Friday).  
-- Define **day parts** based on hour (`Breakfast`, `Lunch`, `Dinner`).  
-- Group by `date`, `Transaction`, and `day_part` to collect all items into a list.  
-- Restrict to **multi-item transactions** (more than one item).  
-- For each transaction, generate all **unique unordered item pairs** using combinations.  
-- For each `day_part`, count how many times each item pair appears.  
-- Using window functions, find the **top 5 most frequent item pairs per day part** and present them, including their pair counts.
-
----
-
-#### Problem 6 – Restaurant Risk Patterns by ZIP Code
-
-Using the **restaurant** dataset:
-
-- Filter to **ACTIVE** Food Service establishments with valid **geolocation**.  
-- Create a **risk category** UDF to map numeric risk levels to labels:
-  - e.g., `No Risk`, `Low Risk`, `Medium Risk`, `High Risk`  
-- For each ZIP code, count restaurants by risk category.  
-- Identify ZIP codes that have **both Low Risk and High Risk** establishments.  
-- Build and display a **pivot table**:
-  - Rows = ZIP codes  
-  - Columns = risk categories  
-  - Cells = restaurant counts, plus a `total` column.
-
----
-
-#### Problem 7 – Population Interpolation & Growth by Region
-
-Using the **global population** dataset:
-
-- Unpivot the wide year format (1980–2010) into a **long format** with columns: `Country`, `year`, `population`.  
-- Use **window functions** to perform **linear interpolation** of missing population values per country.  
-- Pivot selected decades (1980, 1990, 2000, 2010) back into columns.  
-- Exclude aggregate regions (e.g., World, Africa, Europe, etc.) and keep only valid countries.  
-- Assign each country to a **region** (e.g., Asia, Americas, Africa, Europe) based on predefined mappings.  
-- Compute **population growth rates** and **regional average growth** (population-weighted).  
-- Output a table showing for each country:
-  - `Region`, `Country`, population in each decade, and regional average growth rate.
-
----
-
-### Environment & Requirements
-
-- **Language**: Python 3  
-- **Framework**: PySpark  
-- **Environment**: Jupyter Notebook  
-- **Libraries**:
-  - `pyspark.sql` (DataFrame, functions, Window)  
-  - Standard Python libraries (`os`, `itertools`, etc.)  
----
-
-### How to Run
-
-1. Start **Jupyter Notebook** in your environment with Spark configured.  
-2. Open the assignment notebook.  
-3. Ensure the dataset paths in the notebook match your local setup.  
-4. Run all cells in order:
-   - Spark session setup  
-   - Data loading  
-   - Problems 1–7 (in sequence)  
-5. Verify that each problem produces the required outputs (tables, pivot summaries, and rankings).
-
----
-
-### Delivered
-
-- **Completed Jupyter notebook** with:
-  - All code cells executed successfully  
-  - Clear labeling of each problem (Problem 1–7)  
-- **Generated outputs** (tables and summaries) inline in the notebook.  
-
-
+- Item prices in Problem 1 are invented by a UDF (premium $5, standard $3, budget $2, everything else $2.50) — the bakery dataset has no price column, so "revenue" is an estimate against a made-up price list.
+- Zone assignment in Problem 2 uses raw latitude cut points, not real administrative boundaries.
+- The population CSV's first column is unnamed, which Spark flags as a header mismatch; the notebook renames it positionally rather than fixing the source.
+- Problem 7's growth rate is a per-region average, so every country in a region shows the same value — country-level growth is computed but not surfaced in the final table.
